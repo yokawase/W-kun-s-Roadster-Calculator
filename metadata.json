@@ -1,0 +1,5 @@
+{
+  "name": "W-kun's Roadster Calculator",
+  "description": "A financial simulation tool to determine if W-kun can afford a Roadster based on income, lifestyle costs, and car expenses.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>W君のロードスター購入判定機</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Babel Standalone (ESM対応版) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/"
+  }
+}
+</script>
+  </head>
+
+  <body class="bg-slate-50 text-slate-800">
+    <div id="root"></div>
+
+    <!-- type="text/babel" と data-type="module" を指定することで、BabelでトランスパイルしつつES Modulesとして実行する -->
+    <script type="text/babel" data-type="module">
+      import React, { useState, useEffect } from "react";
+      import { createRoot } from "react-dom/client";
+      
+      // lucide-react からアイコンをインポート
+      // Version 0.344.0 に存在する名前のみを使用
+      import {
+        Car,
+        Wallet,
+        Home,
+        Utensils,
+        Zap,
+        Beer,
+        ShieldCheck,
+        Fuel,
+        AlertTriangle, // Old name for TriangleAlert
+        CheckCircle,   // Old name for CircleCheck
+        XCircle,       // Old name for CircleX
+        Share2,
+        Check,
+        Download
+      } from "lucide-react";
+
+      // エイリアス設定（コード内の名称統一のため）
+      const IconAlert = AlertTriangle;
+      const IconCheck = CheckCircle;
+      const IconX = XCircle;
+
+      // ----------------------------------------------------------------------
+      // Component: NumberInput
+      // ----------------------------------------------------------------------
+      const NumberInput = ({ label, value, onChange, icon: Icon, suffix = "円", step = 1000, min = 0, description = "" }) => (
+        <div className="mb-3">
+          <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+            {Icon && <Icon size={14} />}
+            {label}
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              min={min}
+              step={step}
+              value={value.toString()}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                onChange(isNaN(val) ? 0 : val);
+              }}
+              className="w-full p-2 pr-8 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-right font-mono text-slate-700 shadow-sm"
+            />
+            <span className="absolute right-3 top-2 text-slate-400 text-sm">{suffix}</span>
+          </div>
+          {description && <p className="mt-1 text-xs text-slate-400">{description}</p>}
+        </div>
+      );
+
+      // ----------------------------------------------------------------------
+      // Component: VisualBreakdown
+      // ----------------------------------------------------------------------
+      const VisualBreakdown = ({ income, lifestyle, car }) => {
+        const safeIncome = income > 0 ? income : 1;
+        
+        const lifestylePercent = Math.min((lifestyle / safeIncome) * 100, 100);
+        const carPercent = Math.min((car / safeIncome) * 100, 100 - lifestylePercent);
+        const remainingPercent = Math.max(0, 100 - lifestylePercent - carPercent);
+        
+        const totalExpense = lifestyle + car;
+        const isOverBudget = totalExpense > income;
+        const overBudgetPercent = isOverBudget && income > 0 ? ((totalExpense - income) / income) * 100 : 0;
+
+        return (
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-6">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+              収支バランス可視化
+            </h3>
+            
+            {/* ラベル */}
+            <div className="flex justify-between text-xs font-medium text-slate-600 mb-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                生活 {Math.round(lifestylePercent)}%
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
+                車 {Math.round(carPercent)}%
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className={`w-2.5 h-2.5 rounded-full ${remainingPercent > 0 ? 'bg-emerald-400' : 'bg-red-400'}`}></div>
+                {remainingPercent > 0 ? '残' : '赤'} {Math.round(remainingPercent > 0 ? remainingPercent : overBudgetPercent)}%
+              </div>
+            </div>
+
+            {/* スタックバー */}
+            <div className="relative w-full h-6 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
+              <div 
+                className="h-full bg-slate-400 transition-all duration-500 ease-out"
+                style={{ width: `${lifestylePercent}%` }}
+              />
+              <div 
+                className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+                style={{ width: `${carPercent}%` }}
+              />
+              {remainingPercent > 0 ? (
+                <div 
+                  className="h-full bg-emerald-400 transition-all duration-500 ease-out"
+                  style={{ width: `${remainingPercent}%` }}
+                />
+              ) : (
+                <div className="h-full bg-red-200 flex-1 animate-pulse relative"></div>
+              )}
+            </div>
+            {isOverBudget && (
+              <p className="mt-1 text-xs text-red-500 font-bold text-right">⚠️ 予算超過</p>
+            )}
+          </div>
+        );
+      };
+
+      // ----------------------------------------------------------------------
+      // Component: ShareButton
+      // ----------------------------------------------------------------------
+      const ShareButton = ({ state }) => {
+        const [copied, setCopied] = useState(false);
+
+        const handleShare = async () => {
+          const params = new URLSearchParams();
+          Object.keys(state).forEach(key => {
+            params.set(key, state[key].toString());
+          });
+          
+          const shareUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+          const shareData = {
+            title: 'W君のロードスター購入判定機',
+            text: `私のロードスター購入判定結果！手取り${Math.round(state.income/10000)}万円でもいける？`,
+            url: shareUrl,
+          };
+
+          if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+            try {
+              await navigator.share(shareData);
+              return;
+            } catch (err) {
+              console.log('Share canceled', err);
+            }
+          }
+
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } catch (err) {
+            alert('コピーに失敗しました: ' + shareUrl);
+          }
+        };
+
+        return (
+          <button
+            onClick={handleShare}
+            className={`
+              w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-bold text-white transition-all duration-200 shadow-md mb-3
+              ${copied ? 'bg-emerald-500' : 'bg-slate-800 hover:bg-slate-700'}
+            `}
+          >
+            {copied ? <><Check size={18} /> コピー完了！</> : <><Share2 size={18} /> 結果をシェア</>}
+          </button>
+        );
+      };
+
+      // ----------------------------------------------------------------------
+      // Component: ExportButton
+      // ----------------------------------------------------------------------
+      const ExportButton = ({ state, results }) => {
+        const handleExport = () => {
+          const data = [
+            { label: '手取り月収', value: state.income },
+            { label: '家賃', value: state.rent },
+            { label: '食費', value: state.food },
+            { label: '光熱費', value: state.utilities },
+            { label: '交際費', value: state.social },
+            { label: '車両価格', value: state.carPrice },
+            { label: '売却想定額', value: state.resaleValue },
+            { label: 'ローン(月)', value: state.loanTerm },
+            { label: '駐車場', value: state.parking },
+            { label: '保険', value: state.insurance },
+            { label: '維持費他', value: state.gasTaxMaint },
+            { label: '負担比率(%)', value: results.burdenRatio.toFixed(2) },
+            { label: '月次手残り', value: results.remainingFunds },
+          ];
+
+          const headers = data.map(d => d.label).join(',');
+          const values = data.map(d => d.value).join(',');
+          const csvContent = `\uFEFF${headers}\n${values}`; // BOM for Excel
+
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `roadster_sim_${new Date().toISOString().slice(0, 10)}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        return (
+          <button
+            onClick={handleExport}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 transition-all duration-200 shadow-sm"
+          >
+            <Download size={18} /> CSV保存
+          </button>
+        );
+      };
+
+      // ----------------------------------------------------------------------
+      // Component: SourceCodeDownloadButton
+      // ----------------------------------------------------------------------
+      const SourceCodeDownloadButton = () => {
+        const handleDownloadSource = () => {
+          const htmlContent = document.documentElement.outerHTML;
+          const blob = new Blob([htmlContent], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', 'roadster_calculator.html');
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        return (
+           <div className="mt-8 text-center">
+            <button
+              onClick={handleDownloadSource}
+              className="text-xs text-slate-400 hover:text-slate-600 underline"
+            >
+              このアプリのHTMLをダウンロード (オフライン用)
+            </button>
+          </div>
+        );
+      };
+
+      // ----------------------------------------------------------------------
+      // Component: App
+      // ----------------------------------------------------------------------
+      const App = () => {
+        // URLパラメータからの初期値読み込み
+        const getParam = (key, defaultVal) => {
+          const params = new URLSearchParams(window.location.search);
+          const val = params.get(key);
+          return val ? parseInt(val, 10) : defaultVal;
+        };
+
+        const [income, setIncome] = useState(() => getParam('income', 215000));
+        const [rent, setRent] = useState(() => getParam('rent', 25000));
+        const [food, setFood] = useState(() => getParam('food', 50000));
+        const [utilities, setUtilities] = useState(() => getParam('utilities', 15000));
+        const [social, setSocial] = useState(() => getParam('social', 30000));
+        
+        const [carPrice, setCarPrice] = useState(() => getParam('carPrice', 1700000));
+        const [resaleValue, setResaleValue] = useState(() => getParam('resaleValue', 1000000));
+        const [loanTerm, setLoanTerm] = useState(() => getParam('loanTerm', 36));
+        const [parking, setParking] = useState(() => getParam('parking', 30000));
+        const [insurance, setInsurance] = useState(() => getParam('insurance', 20000));
+        const [gasTaxMaint, setGasTaxMaint] = useState(() => getParam('gasTaxMaint', 15000));
+
+        // 計算ロジック
+        const totalLifestyleCost = rent + food + utilities + social;
+        const disposableIncome = income - totalLifestyleCost;
+        
+        const term = loanTerm > 0 ? loanTerm : 1;
+        const monthlyCarCapital = Math.max(0, (carPrice - resaleValue) / term);
+        const monthlyCarRunning = parking + insurance + gasTaxMaint;
+        const totalCarBurden = monthlyCarCapital + monthlyCarRunning;
+        
+        const burdenRatio = disposableIncome > 0 ? (totalCarBurden / disposableIncome) * 100 : 999;
+        const remainingFunds = disposableIncome - totalCarBurden;
+
+        const fmt = (num) => new Intl.NumberFormat("ja-JP").format(Math.round(num));
+
+        // 判定ロジック
+        let statusColor = "";
+        let statusBg = "";
+        let statusMessage = "";
+        let StatusIcon = null;
+
+        if (burdenRatio <= 30) {
+          statusColor = "text-emerald-700";
+          statusBg = "bg-emerald-50 border-emerald-200";
+          statusMessage = "【安全圏】 健全な趣味の範囲です。貯金もしながら楽しめます。GO！";
+          StatusIcon = IconCheck;
+        } else if (burdenRatio <= 50) {
+          statusColor = "text-yellow-700";
+          statusBg = "bg-yellow-50 border-yellow-200";
+          statusMessage = "【注意圏】 少し節約が必要です。他の贅沢を削れば維持可能です。";
+          StatusIcon = IconAlert;
+        } else {
+          statusColor = "text-red-700";
+          statusBg = "bg-red-50 border-red-200";
+          statusMessage = "【危険水域】 家計破綻のリスクが高いです。駐車場か保険を見直してください！";
+          StatusIcon = IconX;
+        }
+
+        const applyPreset = (type) => {
+          if (type === "default") {
+            setParking(30000); setInsurance(20000); setCarPrice(1700000); setGasTaxMaint(15000);
+          } else if (type === "optimized") {
+            setParking(16000); setInsurance(8300); setCarPrice(1700000); setGasTaxMaint(15000);
+          } else if (type === "discount") {
+            setParking(16000); setInsurance(8300); setCarPrice(1580000); setGasTaxMaint(15000);
+          }
+        };
+
+        const stateObj = { income, rent, food, utilities, social, carPrice, resaleValue, loanTerm, parking, insurance, gasTaxMaint };
+        const resultObj = { totalLifestyleCost, disposableIncome, monthlyCarCapital, monthlyCarRunning, totalCarBurden, burdenRatio, remainingFunds };
+
+        return (
+          <div className="min-h-screen py-6 px-4 flex justify-center bg-slate-50">
+            <div className="w-full max-w-4xl">
+              
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-6 border-b border-slate-200 pb-4">
+                <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg">
+                  <Car size={24} />
+                </div>
+                <h1 className="text-xl md:text-2xl font-bold text-slate-800">W君のロードスター購入判定機</h1>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* 左カラム：入力 (lg:span-7) */}
+                <div className="lg:col-span-7 space-y-5">
+                  
+                  {/* プリセット */}
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">一括設定</h2>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => applyPreset("default")} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition">リセット</button>
+                      <button onClick={() => applyPreset("optimized")} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition">節約プラン</button>
+                      <button onClick={() => applyPreset("discount")} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold transition">割引プラン</button>
+                    </div>
+                  </div>
+
+                  {/* 収入・生活費 */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                      <Wallet className="text-indigo-500" size={20} /> 生活基盤
+                    </h2>
+                    <NumberInput label="手取り月収" value={income} onChange={setIncome} />
+                    <div className="grid grid-cols-2 gap-x-4">
+                      <NumberInput label="家賃" value={rent} onChange={setRent} icon={Home} />
+                      <NumberInput label="食費" value={food} onChange={setFood} icon={Utensils} />
+                      <NumberInput label="光熱・通信" value={utilities} onChange={setUtilities} icon={Zap} />
+                      <NumberInput label="交際費・他" value={social} onChange={setSocial} icon={Beer} />
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-slate-100 text-right text-xs text-slate-400">
+                       生活費: <span className="font-medium text-slate-600">¥{fmt(totalLifestyleCost)}</span>
+                    </div>
+                  </div>
+
+                  {/* 車両コスト */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                      <Car className="text-indigo-500" size={20} /> 車両コスト
+                    </h2>
+                    <div className="grid grid-cols-2 gap-x-4">
+                      <NumberInput label="車両価格" value={carPrice} onChange={setCarPrice} />
+                      <NumberInput label="3年後売却" value={resaleValue} onChange={setResaleValue} />
+                    </div>
+                    <NumberInput label="ローン月数" value={loanTerm} onChange={setLoanTerm} suffix="ヶ月" />
+                    <div className="border-t border-slate-100 my-3"></div>
+                    <div className="grid grid-cols-2 gap-x-4">
+                      <NumberInput label="駐車場" value={parking} onChange={setParking} />
+                      <NumberInput label="保険(月)" value={insurance} onChange={setInsurance} icon={ShieldCheck} />
+                    </div>
+                    <NumberInput label="ガソリン・税・整備" value={gasTaxMaint} onChange={setGasTaxMaint} icon={Fuel} />
+                  </div>
+                </div>
+
+                {/* 右カラム：結果 (lg:span-5) */}
+                <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4 h-fit">
+                  
+                  {/* 判定カード */}
+                  <div className={`${statusBg} border-l-4 p-5 rounded-r-xl shadow-sm transition-colors duration-300`}>
+                    <div className="flex items-start gap-4">
+                      <StatusIcon className={`flex-shrink-0 ${statusColor}`} size={32} />
+                      <div>
+                        <h3 className={`${statusColor} font-bold text-lg`}>判定結果</h3>
+                        <p className={`${statusColor} text-sm mt-1 leading-relaxed`}>{statusMessage}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 数値詳細 */}
+                  <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-800 text-white p-3 text-sm font-bold text-center">
+                      月次シミュレーション
+                    </div>
+                    <div className="p-5 space-y-4">
+                      
+                      <div className="flex justify-between items-end border-b pb-3">
+                        <span className="text-slate-500 text-sm font-bold">現在の負担比率</span>
+                        <span className={`text-4xl font-bold ${statusColor}`}>{burdenRatio.toFixed(1)}<span className="text-sm text-slate-400 ml-1">%</span></span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">車両償却（実質）</span>
+                          <span className="font-mono text-slate-700">¥{fmt(monthlyCarCapital)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">維持費（ランニング）</span>
+                          <span className="font-mono text-slate-700">¥{fmt(monthlyCarRunning)}</span>
+                        </div>
+                        <div className="flex justify-between text-base font-bold text-slate-800 pt-2 border-t border-dashed mt-2">
+                          <span>車関連支出 合計</span>
+                          <span>¥{fmt(totalCarBurden)}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-indigo-50 rounded-lg p-4 text-center mt-2">
+                        <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest mb-1">最終手残り (月間貯金)</div>
+                        <div className={`text-3xl font-black ${remainingFunds < 0 ? 'text-red-500' : 'text-indigo-700'}`}>
+                          ¥{fmt(remainingFunds)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* グラフ */}
+                  <VisualBreakdown income={income} lifestyle={totalLifestyleCost} car={totalCarBurden} />
+
+                  {/* アクションボタン */}
+                  <div className="space-y-2">
+                    <ShareButton state={stateObj} />
+                    <ExportButton state={stateObj} results={resultObj} />
+                  </div>
+
+                  {/* ソースコードダウンロード */}
+                  <SourceCodeDownloadButton />
+
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const root = createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
