@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "description": "W-kun's Roadster Calculator",
+  "scripts": {
+    "build": "node -e \"const fs=require('fs'); const d='dist/client'; if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true}); fs.copyFileSync('index.html', d+'/index.html');\""
+  },
   "dependencies": {
     "lucide-react": "0.344.0",
     "react": "^18.2.0",

@@ -88,8 +88,11 @@
       const VisualBreakdown = ({ income, lifestyle, car }) => {
         const safeIncome = income > 0 ? income : 1;
         
+        // 割合計算（100%を超えないようにクランプ）
         const lifestylePercent = Math.min((lifestyle / safeIncome) * 100, 100);
-        const carPercent = Math.min((car / safeIncome) * 100, 100 - lifestylePercent);
+        // 生活費で埋まった残りのスペースのみを車費に割り当てる
+        const carPercent = Math.min((car / safeIncome) * 100, Math.max(0, 100 - lifestylePercent));
+        // 残り
         const remainingPercent = Math.max(0, 100 - lifestylePercent - carPercent);
         
         const totalExpense = lifestyle + car;
@@ -106,11 +109,11 @@
             <div className="flex justify-between text-xs font-medium text-slate-600 mb-2">
               <div className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
-                生活 {Math.round(lifestylePercent)}%
+                生活 {Math.round((lifestyle / safeIncome) * 100)}%
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
-                車 {Math.round(carPercent)}%
+                車 {Math.round((car / safeIncome) * 100)}%
               </div>
               <div className="flex items-center gap-1.5">
                 <div className={`w-2.5 h-2.5 rounded-full ${remainingPercent > 0 ? 'bg-emerald-400' : 'bg-red-400'}`}></div>
@@ -305,7 +308,7 @@
 
         const fmt = (num) => new Intl.NumberFormat("ja-JP").format(Math.round(num));
 
-        // 判定ロジック
+        // 判定ロジック（趣味の支出30-40%を推奨とする新基準）
         let statusColor = "";
         let statusBg = "";
         let statusMessage = "";
@@ -314,17 +317,22 @@
         if (burdenRatio <= 30) {
           statusColor = "text-emerald-700";
           statusBg = "bg-emerald-50 border-emerald-200";
-          statusMessage = "【安全圏】 健全な趣味の範囲です。貯金もしながら楽しめます。GO！";
+          statusMessage = "【余裕あり】 素晴らしい資金管理です。将来のための貯蓄も十分に確保できています。";
+          StatusIcon = IconCheck;
+        } else if (burdenRatio <= 40) {
+          statusColor = "text-indigo-700";
+          statusBg = "bg-indigo-50 border-indigo-200";
+          statusMessage = "【推奨ライン】 趣味の車として理想的なバランス（30〜40%）です。ロードスターライフを存分に楽しめます！";
           StatusIcon = IconCheck;
         } else if (burdenRatio <= 50) {
           statusColor = "text-yellow-700";
           statusBg = "bg-yellow-50 border-yellow-200";
-          statusMessage = "【注意圏】 少し節約が必要です。他の贅沢を削れば維持可能です。";
+          statusMessage = "【少し背伸び】 一般的な推奨ラインを超えています。他の贅沢を削れば維持可能ですが、予期せぬ出費に注意。";
           StatusIcon = IconAlert;
         } else {
           statusColor = "text-red-700";
           statusBg = "bg-red-50 border-red-200";
-          statusMessage = "【危険水域】 家計破綻のリスクが高いです。駐車場か保険を見直してください！";
+          statusMessage = "【危険水域】 可処分所得の半分以上が車に消えます。家計破綻のリスクが高いです。見直しを強く推奨します。";
           StatusIcon = IconX;
         }
 
