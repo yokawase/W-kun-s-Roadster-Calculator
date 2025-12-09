@@ -31,7 +31,6 @@
       import { createRoot } from "react-dom/client";
       
       // lucide-react からアイコンをインポート
-      // Version 0.344.0 に存在する名前のみを使用
       import {
         Car,
         Wallet,
@@ -41,15 +40,17 @@
         Beer,
         ShieldCheck,
         Fuel,
-        AlertTriangle, // Old name for TriangleAlert
-        CheckCircle,   // Old name for CircleCheck
-        XCircle,       // Old name for CircleX
+        AlertTriangle, 
+        CheckCircle,   
+        XCircle,       
         Share2,
         Check,
-        Download
+        Download,
+        Banknote,
+        Percent
       } from "lucide-react";
 
-      // エイリアス設定（コード内の名称統一のため）
+      // エイリアス設定
       const IconAlert = AlertTriangle;
       const IconCheck = CheckCircle;
       const IconX = XCircle;
@@ -57,7 +58,7 @@
       // ----------------------------------------------------------------------
       // Component: NumberInput
       // ----------------------------------------------------------------------
-      const NumberInput = ({ label, value, onChange, icon: Icon, suffix = "円", step = 1000, min = 0, description = "" }) => (
+      const NumberInput = ({ label, value, onChange, icon: Icon, suffix = "円", step = 1000, min = 0, description = "", isFloat = false }) => (
         <div className="mb-3">
           <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
             {Icon && <Icon size={14} />}
@@ -71,7 +72,7 @@
               value={value.toString()}
               onFocus={(e) => e.target.select()}
               onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
+                const val = isFloat ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
                 onChange(isNaN(val) ? 0 : val);
               }}
               className="w-full p-2 pr-8 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-right font-mono text-slate-700 shadow-sm"
@@ -209,11 +210,14 @@
             { label: '光熱費', value: state.utilities },
             { label: '交際費', value: state.social },
             { label: '車両価格', value: state.carPrice },
-            { label: '売却想定額', value: state.resaleValue },
+            { label: '頭金', value: state.downPayment },
+            { label: '金利(%)', value: state.interestRate },
             { label: 'ローン(月)', value: state.loanTerm },
+            { label: '売却想定額', value: state.resaleValue },
             { label: '駐車場', value: state.parking },
             { label: '保険', value: state.insurance },
             { label: '維持費他', value: state.gasTaxMaint },
+            { label: 'ローン返済額', value: results.monthlyLoanPayment },
             { label: '負担比率(%)', value: results.burdenRatio.toFixed(2) },
             { label: '月次手残り', value: results.remainingFunds },
           ];
@@ -274,11 +278,11 @@
       // Component: App
       // ----------------------------------------------------------------------
       const App = () => {
-        // URLパラメータからの初期値読み込み
-        const getParam = (key, defaultVal) => {
+        const getParam = (key, defaultVal, isFloat = false) => {
           const params = new URLSearchParams(window.location.search);
           const val = params.get(key);
-          return val ? parseInt(val, 10) : defaultVal;
+          if (!val) return defaultVal;
+          return isFloat ? parseFloat(val) : parseInt(val, 10);
         };
 
         const [income, setIncome] = useState(() => getParam('income', 215000));
@@ -288,8 +292,11 @@
         const [social, setSocial] = useState(() => getParam('social', 30000));
         
         const [carPrice, setCarPrice] = useState(() => getParam('carPrice', 1700000));
+        const [downPayment, setDownPayment] = useState(() => getParam('downPayment', 0));
+        const [interestRate, setInterestRate] = useState(() => getParam('interestRate', 2.9, true));
         const [resaleValue, setResaleValue] = useState(() => getParam('resaleValue', 1000000));
         const [loanTerm, setLoanTerm] = useState(() => getParam('loanTerm', 36));
+        
         const [parking, setParking] = useState(() => getParam('parking', 30000));
         const [insurance, setInsurance] = useState(() => getParam('insurance', 20000));
         const [gasTaxMaint, setGasTaxMaint] = useState(() => getParam('gasTaxMaint', 15000));
@@ -298,10 +305,28 @@
         const totalLifestyleCost = rent + food + utilities + social;
         const disposableIncome = income - totalLifestyleCost;
         
+        // ローン計算 (PMT)
+        const principal = carPrice - downPayment;
+        const monthlyRate = (interestRate / 100) / 12;
+        let monthlyLoanPayment = 0;
+
+        if (loanTerm > 0) {
+            if (interestRate === 0) {
+                monthlyLoanPayment = principal / loanTerm;
+            } else {
+                monthlyLoanPayment = (principal * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) / 
+                                     (Math.pow(1 + monthlyRate, loanTerm) - 1);
+            }
+        }
+        
+        // 実質償却計算（参考値）
         const term = loanTerm > 0 ? loanTerm : 1;
-        const monthlyCarCapital = Math.max(0, (carPrice - resaleValue) / term);
+        const actualDepreciation = Math.max(0, (carPrice - resaleValue) / term);
+
         const monthlyCarRunning = parking + insurance + gasTaxMaint;
-        const totalCarBurden = monthlyCarCapital + monthlyCarRunning;
+        
+        // 判定には「実際のキャッシュフロー（ローン返済額）」を使用する
+        const totalCarBurden = monthlyLoanPayment + monthlyCarRunning;
         
         const burdenRatio = disposableIncome > 0 ? (totalCarBurden / disposableIncome) * 100 : 999;
         const remainingFunds = disposableIncome - totalCarBurden;
@@ -339,15 +364,18 @@
         const applyPreset = (type) => {
           if (type === "default") {
             setParking(30000); setInsurance(20000); setCarPrice(1700000); setGasTaxMaint(15000);
+            setDownPayment(0); setInterestRate(2.9);
           } else if (type === "optimized") {
             setParking(16000); setInsurance(8300); setCarPrice(1700000); setGasTaxMaint(15000);
+            setDownPayment(300000); setInterestRate(1.9);
           } else if (type === "discount") {
             setParking(16000); setInsurance(8300); setCarPrice(1580000); setGasTaxMaint(15000);
+            setDownPayment(500000); setInterestRate(1.5);
           }
         };
 
-        const stateObj = { income, rent, food, utilities, social, carPrice, resaleValue, loanTerm, parking, insurance, gasTaxMaint };
-        const resultObj = { totalLifestyleCost, disposableIncome, monthlyCarCapital, monthlyCarRunning, totalCarBurden, burdenRatio, remainingFunds };
+        const stateObj = { income, rent, food, utilities, social, carPrice, downPayment, interestRate, resaleValue, loanTerm, parking, insurance, gasTaxMaint };
+        const resultObj = { totalLifestyleCost, disposableIncome, monthlyLoanPayment, monthlyCarRunning, totalCarBurden, burdenRatio, remainingFunds };
 
         return (
           <div className="min-h-screen py-6 px-4 flex justify-center bg-slate-50">
@@ -358,7 +386,7 @@
                 <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg">
                   <Car size={24} />
                 </div>
-                <h1 className="text-xl md:text-2xl font-bold text-slate-800">W君のロードスター購入判定機</h1>
+                <h1 className="text-xl md:text-2xl font-bold text-slate-800">W君のロードスター購入判定機 <span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded ml-2">ローン計算対応版</span></h1>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -388,22 +416,50 @@
                       <NumberInput label="光熱・通信" value={utilities} onChange={setUtilities} icon={Zap} />
                       <NumberInput label="交際費・他" value={social} onChange={setSocial} icon={Beer} />
                     </div>
-                    <div className="mt-2 pt-2 border-t border-slate-100 text-right text-xs text-slate-400">
-                       生活費: <span className="font-medium text-slate-600">¥{fmt(totalLifestyleCost)}</span>
+                    <div className="mt-4 pt-3 border-t border-slate-100 bg-slate-50 -mx-5 -mb-5 px-5 py-3 rounded-b-xl flex justify-between items-center">
+                       <div className="text-xs text-slate-500">
+                          生活費計: <span className="font-medium">¥{fmt(totalLifestyleCost)}</span>
+                       </div>
+                       <div className="text-right">
+                          <div className="text-xs text-slate-500 font-bold mb-0.5">可処分所得</div>
+                          <div className={`text-xl font-bold leading-none ${disposableIncome >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>
+                            ¥{fmt(disposableIncome)}
+                          </div>
+                       </div>
                     </div>
                   </div>
 
-                  {/* 車両コスト */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  {/* 車両コスト（ローン計算） */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm ring-1 ring-indigo-100">
                     <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <Car className="text-indigo-500" size={20} /> 車両コスト
+                      <Car className="text-indigo-500" size={20} /> 車両ローン計画
                     </h2>
+                    <NumberInput label="車両価格" value={carPrice} onChange={setCarPrice} />
                     <div className="grid grid-cols-2 gap-x-4">
-                      <NumberInput label="車両価格" value={carPrice} onChange={setCarPrice} />
-                      <NumberInput label="3年後売却" value={resaleValue} onChange={setResaleValue} />
+                      <NumberInput label="頭金" value={downPayment} onChange={setDownPayment} icon={Banknote} />
+                      <NumberInput label="金利 (実質年率)" value={interestRate} onChange={setInterestRate} icon={Percent} suffix="%" step={0.1} isFloat={true} />
                     </div>
                     <NumberInput label="ローン月数" value={loanTerm} onChange={setLoanTerm} suffix="ヶ月" />
-                    <div className="border-t border-slate-100 my-3"></div>
+                    
+                    <div className="bg-slate-50 p-3 rounded-lg text-sm text-slate-600 mt-2 border border-slate-200">
+                      <div className="flex justify-between items-center mb-1">
+                         <span>3年後売却想定額 (参考)</span>
+                         <input 
+                           type="number" 
+                           value={resaleValue}
+                           onChange={(e) => setResaleValue(parseInt(e.target.value) || 0)}
+                           className="w-24 text-right bg-white border border-slate-300 rounded px-1 text-xs"
+                         />
+                      </div>
+                      <p className="text-xs text-slate-400">※売却額は判定の「毎月の支払能力」には影響しません</p>
+                    </div>
+                  </div>
+
+                  {/* 維持費 */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h2 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                      <Fuel className="text-indigo-500" size={20} /> 維持費
+                    </h2>
                     <div className="grid grid-cols-2 gap-x-4">
                       <NumberInput label="駐車場" value={parking} onChange={setParking} />
                       <NumberInput label="保険(月)" value={insurance} onChange={setInsurance} icon={ShieldCheck} />
@@ -429,7 +485,7 @@
                   {/* 数値詳細 */}
                   <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
                     <div className="bg-slate-800 text-white p-3 text-sm font-bold text-center">
-                      月次シミュレーション
+                      月次キャッシュフロー
                     </div>
                     <div className="p-5 space-y-4">
                       
@@ -440,16 +496,20 @@
 
                       <div className="space-y-1">
                         <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">車両償却（実質）</span>
-                          <span className="font-mono text-slate-700">¥{fmt(monthlyCarCapital)}</span>
+                          <span className="text-slate-500 font-bold text-indigo-900">ローン返済額</span>
+                          <span className="font-mono text-indigo-900 font-bold">¥{fmt(monthlyLoanPayment)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">維持費（ランニング）</span>
                           <span className="font-mono text-slate-700">¥{fmt(monthlyCarRunning)}</span>
                         </div>
                         <div className="flex justify-between text-base font-bold text-slate-800 pt-2 border-t border-dashed mt-2">
-                          <span>車関連支出 合計</span>
+                          <span>毎月の支払総額</span>
                           <span>¥{fmt(totalCarBurden)}</span>
+                        </div>
+                        
+                        <div className="pt-2 mt-2 text-xs text-slate-400 text-right">
+                          (参考) 実質償却ベース: ¥{fmt(actualDepreciation)}/月
                         </div>
                       </div>
 
